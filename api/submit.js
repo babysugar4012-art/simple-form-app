@@ -1,5 +1,6 @@
+import { createClient } from "@supabase/supabase-js";
+
 export default async function handler(req, res) {
-  // Accept POST requests only.
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({
@@ -7,48 +8,68 @@ export default async function handler(req, res) {
     });
   }
 
-  // Parse and validate the survey submission.
-  const { email, answer, consent } = req.body || {};
+  try {
+    const { email, answer, consent } = req.body || {};
 
-  if (
-    typeof email !== "string" ||
-    typeof answer !== "string" ||
-    consent !== true
-  ) {
-    return res.status(400).json({
-      error: "Please provide valid survey details and consent."
+    if (
+      typeof email !== "string" ||
+      typeof answer !== "string" ||
+      consent !== true
+    ) {
+      return res.status(400).json({
+        error: "Please provide your contact information, answer, and consent."
+      });
+    }
+
+    const cleanEmail = email.trim();
+    const cleanAnswer = answer.trim();
+
+    if (
+      !cleanEmail ||
+      !cleanAnswer ||
+      cleanEmail.length > 254 ||
+      cleanAnswer.length > 2000
+    ) {
+      return res.status(400).json({
+        error: "Please check your submitted information."
+      });
+    }
+
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false
+        }
+      }
+    );
+
+    const { error } = await supabase
+      .from("form_submissions")
+      .insert({
+        email: cleanEmail,
+        answer: cleanAnswer
+      });
+
+    if (error) {
+      console.error("Submission insert failed:", error.message);
+
+      return res.status(500).json({
+        error: "Unable to save your response. Please try again."
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Your response was submitted successfully."
     });
-  }
-
-  const cleanEmail = email.trim();
-  const cleanAnswer = answer.trim();
-
-  if (
-    cleanEmail.length < 3 ||
-    cleanEmail.length > 254 ||
-    cleanAnswer.length < 1 ||
-    cleanAnswer.length > 1000
-  ) {
-    return res.status(400).json({
-      error: "The submitted information is invalid."
-    });
-  }
-
-  // Confirm the backend is configured.
-  if (
-    !process.env.SUPABASE_URL ||
-    !process.env.SUPABASE_SERVICE_ROLE_KEY
-  ) {
-    console.error("Supabase environment variables are missing.");
+  } catch (error) {
+    console.error("Submission error:", error.message);
 
     return res.status(500).json({
-      error: "The submission service is not configured."
+      error: "An unexpected error occurred."
     });
   }
-
-  // Database insertion will be added once the survey's
-  // storage and access rules are configured.
-  return res.status(501).json({
-    error: "Database storage has not been configured yet."
-  });
 }
